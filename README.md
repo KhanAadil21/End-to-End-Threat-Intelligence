@@ -35,7 +35,7 @@ Kibana is only reachable through an SSH tunnel via the honeypot VM, so nothing a
 
 ### The dashboard
 
-![dashboard overview](docs/images/overview-dashboard.png)
+![dashboard overview](docs/images/new-dashboard.png)
 
 | Panel | What it shows |
 |-------|---------------|
@@ -52,7 +52,7 @@ A closer look at the main panels:
 
 **Where the attacks come from**
 
-![Attacker origins map](docs/images/attacker-origins-map.png)
+![Attacker origins map](docs/images/attacks-world-map.png)
 
 **Which sensors see the traffic**
 
