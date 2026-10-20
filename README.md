@@ -1,4 +1,4 @@
-# T-Pot Honeypot Threat Intel Project
+# End-to-End Threat Intel Project
 
 I set up a honeypot on a cloud VM, let the internet attack it, and built a pipeline that turns the raw logs into a live Kibana dashboard. I'm building this in stages and adding each one to this same repo, so the history of how it grew stays in one place.
 
