@@ -1,0 +1,14 @@
+# Wazuh manager API binding
+# File: /var/ossec/api/configuration/api.yaml
+#
+# Out of the box the API listened on 0.0.0.0:55000. It only needs to be
+# reachable from the dashboard on the same box, so it is bound to loopback.
+#
+# The value has to be a YAML list. A plain string (host: 127.0.0.1) crashed
+# the manager, and ['127.0.0.1', '::'] still left an IPv6 wildcard open.
+#
+# Check after restart:
+#   sudo systemctl restart wazuh-manager
+#   ss -tlnp | grep 55000      # expect 127.0.0.1:55000 only
+
+host: ['127.0.0.1']

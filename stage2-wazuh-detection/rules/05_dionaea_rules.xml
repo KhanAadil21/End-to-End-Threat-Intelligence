@@ -1,0 +1,219 @@
+<!--
+================================================================================
+  DIONAEA MALWARE CAPTURE HONEYPOT: CUSTOM DETECTION RULES
+  Rule ID range:   100070-100099
+  Decoder:         none, generic JSON decoder (decoded_as json)
+  Log source:      Dionaea JSON connection log under
+                   /home/tpotadmin/tpotce/data/dionaea/log/
+  Parent rules:    none for 100070-100075. 100076 is a child of 100075 and
+                   100077 counts 100074.
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Build notes
+  - Dionaea emulates a long list of services (smbd, mssqld, mysqld, ftpd,
+    mongod, mqttd, pptpd, httpd, epmapper and more). The connection rules
+    are grouped into tiers instead of one rule per service.
+  - The service sits in a nested field. Bare "protocol" is reserved in Wazuh,
+    but the decoded name connection.protocol is not, so it matches cleanly.
+  - Alternation inside a <field> only worked once I forced type="pcre2".
+  - ftp.commands.command is a JSON array. The decoder flattens it into one
+    Python-list-looking string like ['USER', 'PASS'], which is why 100076
+    uses word boundaries rather than an anchored allow-list.
+  - 100074 and 100075 used to be chained (100072 then 100074 then 100075).
+    That hid every FTP session with commands but no login, including a real
+    scanner probe. They stand alone now.
+================================================================================
+-->
+
+<group name="dionaea_connection_attempt,">
+
+  <!--
+    Rule ID:      100070
+    Purpose:      Connection to the SMB emulator. Highest volume Dionaea rule,
+                  mostly worm and scanner traffic.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (header rewritten, src_ip and MITRE added)
+    Log Source:   Dionaea JSON, connection.protocol smbd
+    MITRE ATT&CK: T1046 Network Service Discovery (Discovery)
+    False Positive Matrix: none, no real SMB service exists here.
+  -->
+  <rule id="100070" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="connection.protocol">^smbd$</field>
+    <description>Dionaea: SMB connection from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>dionaea,smbd,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100071
+    Purpose:      Connection to an emulated database (MSSQL, MySQL or MongoDB),
+                  grouped as one kind of attacker interest.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (header rewritten, src_ip and MITRE added)
+    Log Source:   Dionaea JSON, connection.protocol mssqld, mysqld or mongod
+    MITRE ATT&CK: T1046 Network Service Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100071" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="connection.protocol" type="pcre2">^(mssqld|mysqld|mongod)$</field>
+    <description>Dionaea: database connection from $(src_ip) on $(connection.protocol), port $(dst_port)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>dionaea,database,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100072
+    Purpose:      Connection to the FTP emulator. Connection only, commands are
+                  handled by 100075.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (header rewritten, src_ip and MITRE added)
+    Log Source:   Dionaea JSON, connection.protocol ftpd
+    MITRE ATT&CK: T1046 Network Service Discovery
+    False Positive Matrix:
+      ^ftpd$ is anchored, so ftpdatalisten (the data channel listener) does
+      not match here and falls through to 100073.
+  -->
+  <rule id="100072" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="connection.protocol">^ftpd$</field>
+    <description>Dionaea: FTP connection from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>dionaea,ftpd,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100073
+    Purpose:      Catch-all for every other Dionaea service (pptpd, httpd,
+                  epmapper, mqttd, mirrorc, mirrord, ftpdatalisten and so on),
+                  so rarer services are still logged without a rule each.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (header rewritten, src_ip and MITRE added)
+    Log Source:   Dionaea JSON, connection.protocol not in the four tiers above
+    MITRE ATT&CK: T1046 Network Service Discovery
+    False Positive Matrix:
+      Negated match. Worth checking that a JSON line from another honeypot
+      with no connection.protocol at all does not land here.
+  -->
+  <rule id="100073" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="connection.protocol" type="pcre2" negate="yes">^(smbd|mssqld|mysqld|mongod|ftpd)$</field>
+    <description>Dionaea: connection from $(src_ip) on $(connection.protocol), port $(dst_port)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>dionaea,other_services,connection_attempt,</group>
+  </rule>
+
+</group>
+
+<group name="dionaea_authentication_attempt,">
+
+  <!--
+    Rule ID:      100074
+    Purpose:      Credentials submitted on any Dionaea service. One rule for all
+                  of them, the description says which service.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (field moved to top-level credentials)
+    Log Source:   Dionaea JSON, credentials.username present
+    MITRE ATT&CK: T1110 Brute Force (Credential Access)
+    False Positive Matrix:
+      Only username is checked. Blank passwords are common in real attempts
+      and still count. Known gap: an older log shape nests credentials under
+      ftp, and this rule does not see that shape.
+  -->
+  <rule id="100074" level="7">
+    <decoded_as>json</decoded_as>
+    <field name="credentials.username" type="pcre2">.+</field>
+    <description>Dionaea: credential attempt from $(src_ip) on $(connection.protocol), port $(dst_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>dionaea,credential_attempt,authentication,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100077
+    Purpose:      Brute force. The same src_ip sets off 100074 five times inside
+                  120 seconds. One attempt can be a probe, five in two minutes
+                  is a script.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-04
+    Log Source:   Built on 100074 (if_matched_sid)
+    MITRE ATT&CK: T1110 Brute Force, T1110.001 Password Guessing.
+                  Same pair as Cowrie's 100011.
+    False Positive Matrix: none on a decoy.
+  -->
+  <rule id="100077" level="13" frequency="5" timeframe="120">
+    <if_matched_sid>100074</if_matched_sid>
+    <same_field>src_ip</same_field>
+    <description>Dionaea: credential brute force, 5+ attempts in 120s from $(src_ip) on $(connection.protocol), port $(dst_port)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>dionaea,brute_force,</group>
+  </rule>
+
+</group>
+
+<group name="dionaea_command_interaction,">
+
+  <!--
+    Rule ID:      100075
+    Purpose:      FTP commands after the connection. Confirms the client is
+                  talking the protocol rather than connecting and dropping.
+                  FTP is the only Dionaea module that logs commands.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-03 (header rewritten, MITRE added)
+    Log Source:   Dionaea JSON, ftp.commands.command present
+    MITRE ATT&CK: T1595 Active Scanning (Reconnaissance). Nearly all of this is
+                  scanners negotiating with the service, so I mapped it as
+                  recon rather than as FTP command and control.
+    False Positive Matrix: none.
+  -->
+  <rule id="100075" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="ftp.commands.command" type="pcre2">.+</field>
+    <description>Dionaea: FTP command activity from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>dionaea,ftpd,command_interaction,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100076
+    Purpose:      Data on the FTP port that is not FTP. Fires when none of the
+                  basic FTP verbs show up in the flattened command list. Real
+                  hits: a zgrab probe sending an HTTP GET for a Squid
+                  cachemgr.cgi page to port 21, and clients firing a raw TLS
+                  handshake at the plaintext port.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-02 (built), 2026-10-03 (live version from the manager)
+    Log Source:   Built on 100075 (if_sid)
+    MITRE ATT&CK: T1595.002 Active Scanning: Vulnerability Scanning
+    False Positive Matrix:
+      Case sensitive on purpose, so "User-Agent:" does not count as USER.
+      A valid session using only other verbs (FEAT, PWD, NOOP) would fire,
+      and a session mixing USER with junk would not.
+  -->
+  <rule id="100076" level="12">
+    <if_sid>100075</if_sid>
+    <field name="ftp.commands.command" type="pcre2" negate="yes">\b(USER|PASS|OPTS|SYST|QUIT|STAT)\b</field>
+    <description>Dionaea: non-FTP data from $(src_ip) on port $(dst_port), possible scanner or protocol confusion</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>dionaea,ftpd,anomalous_protocol,</group>
+  </rule>
+
+</group>

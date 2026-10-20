@@ -1,0 +1,258 @@
+<!--
+================================================================================
+  WINDOWS RDP BAIT HOST: CUSTOM DETECTION RULES
+  Rule ID range:   110001-110099
+  Host:            Windows Server 2022, internet facing on TCP 3389, Wazuh
+                   agent 4.14.8, Sysmon with the SwiftOnSecurity config
+  Log sources:     Security, System, Microsoft-Windows-Sysmon/Operational and
+                   Microsoft-Windows-Windows Defender/Operational event channels
+  Parent rules:    every rule chains off a Wazuh built-in Windows rule
+                   (60001, 60103, 60109, 60122, 60144, 60204, 61138, 67027,
+                   92653), so the stock decoders do the parsing.
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Kill chain covered
+    Initial access       110001, 110002, 110003
+    Persistence          110004, 110006
+    Privilege escalation 110005
+    Discovery            110008
+    Tool transfer        110007
+    Defense evasion      110009, 110010
+
+  Every rule was validated by running the matching attacker action on the
+  host and confirming the alert on the manager. Test artifacts were removed
+  afterwards.
+================================================================================
+-->
+
+<group name="windows_bait,">
+
+  <!--
+    Rule ID:      110001
+    Purpose:      Any logon attempt against the bait account "support". The
+                  account only exists as a lure, so every hit is hostile.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       60122 (logon failure), 60204 (logon attempt)
+    Log Source:   Windows Security log
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix:
+      None. The account has no legitimate user and account lockout is off,
+      so attackers keep trying and the alerts keep coming.
+  -->
+  <rule id="110001" level="8">
+    <if_sid>60122, 60204</if_sid>
+    <field name="win.eventdata.targetUserName">^support$</field>
+    <description>Authentication attempt against bait account "support" from $(win.eventdata.ipAddress)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>windows_bait,honeypot,authentication_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110002
+    Purpose:      Successful RDP logon (4624, LogonType 10). The attacker has an
+                  interactive desktop. The single most important Windows alert.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       92653 (RDP logon, LogonType 10)
+    Log Source:   Windows Security log, 4624
+    MITRE ATT&CK: T1021.001 Remote Services: RDP, T1078 Valid Accounts
+    False Positive Matrix:
+      My own maintenance sessions. Check the source IP against the operator
+      address before escalating.
+  -->
+  <rule id="110002" level="12">
+    <if_sid>92653</if_sid>
+    <description>Successful RDP logon from $(win.eventdata.ipAddress) as $(win.eventdata.targetUserName), attacker has interactive access</description>
+    <mitre>
+      <id>T1021.001</id>
+      <id>T1078</id>
+    </mitre>
+    <group>windows_bait,authentication_success,session_start,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110003
+    Purpose:      Brute force. Repeated hits on the bait account from one IP
+                  inside two minutes.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       110001 (if_matched_sid)
+    Log Source:   Windows Security log
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: unlikely, repeated bait account hits are the signal.
+  -->
+  <rule id="110003" level="12" frequency="2" timeframe="120">
+    <if_matched_sid>110001</if_matched_sid>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <description>Brute force against bait account from $(win.eventdata.ipAddress)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>windows_bait,brute_force,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110004
+    Purpose:      New local user created (4720). Backdoor accounts are a
+                  standard way to keep access.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       60109 (4720, user account created)
+    Log Source:   Windows Security log, 4720
+    MITRE ATT&CK: T1136.001 Create Account: Local Account
+    False Positive Matrix: none, I do not create accounts on this host.
+  -->
+  <rule id="110004" level="10">
+    <if_sid>60109</if_sid>
+    <description>New user account "$(win.eventdata.targetUserName)" created by $(win.eventdata.subjectUserName), possible persistence</description>
+    <mitre>
+      <id>T1136.001</id>
+    </mitre>
+    <group>windows_bait,account_created,persistence,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110005
+    Purpose:      Account added to a privileged local group (4732).
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       60144 (4732, member added to security group)
+    Log Source:   Windows Security log, 4732
+    MITRE ATT&CK: T1098 Account Manipulation, T1078.003 Valid Accounts: Local Accounts
+    False Positive Matrix:
+      None expected. The event carries the member SID rather than the name,
+      so the description shows the SID.
+  -->
+  <rule id="110005" level="14">
+    <if_sid>60144</if_sid>
+    <description>Account $(win.eventdata.memberSid) added to a privileged group by $(win.eventdata.subjectUserName), privilege escalation</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1078.003</id>
+    </mitre>
+    <group>windows_bait,privilege_escalation,account_manipulation,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110006
+    Purpose:      New service installed (7045). Services run as SYSTEM and
+                  survive reboots, which makes them a favourite for persistence.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       61138 (7045, new service installed)
+    Log Source:   Windows System log, 7045
+    MITRE ATT&CK: T1543.003 Create or Modify System Process: Windows Service
+    False Positive Matrix:
+      Windows Update or a software install during maintenance. Compare the
+      time against my own change log.
+  -->
+  <rule id="110006" level="10">
+    <if_sid>61138</if_sid>
+    <description>New service "$(win.eventdata.serviceName)" installed on bait host, possible persistence</description>
+    <mitre>
+      <id>T1543.003</id>
+    </mitre>
+    <group>windows_bait,service_creation,persistence,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110007
+    Purpose:      Living-off-the-land binaries used to pull or run payloads:
+                  certutil with urlcache or decode, bitsadmin transfer, encoded
+                  PowerShell, mshta over HTTP.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       67027 (4688, process created)
+    Log Source:   Windows Security log, 4688 with command line auditing on
+    MITRE ATT&CK: T1105 Ingress Tool Transfer, T1218 System Binary Proxy Execution
+    False Positive Matrix:
+      An admin script using certutil for certificate work. Read the full
+      command line before closing it.
+  -->
+  <rule id="110007" level="12">
+    <if_sid>67027</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)certutil.*(-urlcache|decode)|bitsadmin.*\/transfer|powershell.*-enc|mshta.*http</field>
+    <description>LOLBin execution on bait host: $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1218</id>
+    </mitre>
+    <group>windows_bait,lolbin,tool_transfer,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110008
+    Purpose:      The recon commands people run in the first minutes after
+                  landing: whoami, ipconfig, systeminfo, tasklist, net user,
+                  net localgroup, netstat, hostname.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       67027 (4688, process created)
+    Log Source:   Windows Security log, 4688 with command line
+    MITRE ATT&CK: T1033 System Owner/User Discovery, T1082 System Information
+                  Discovery, T1016 System Network Configuration Discovery
+    False Positive Matrix:
+      Admin diagnostics. On a honeypot any of these is hostile. Kept below
+      110007 because recon comes before staging in the kill chain.
+  -->
+  <rule id="110008" level="9">
+    <if_sid>67027</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(whoami|ipconfig|systeminfo|tasklist|net\s+user|net\s+localgroup|netstat|hostname)</field>
+    <description>Reconnaissance command on bait host: $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1033</id>
+      <id>T1082</id>
+      <id>T1016</id>
+    </mitre>
+    <group>windows_bait,recon,discovery,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110009
+    Purpose:      Defender real-time protection switched off (5001). Usually
+                  the step right before a payload lands.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       60001 (Windows EventChannel base)
+    Log Source:   Microsoft-Windows-Windows Defender/Operational, 5001
+    MITRE ATT&CK: T1562.001 Impair Defenses: Disable or Modify Tools
+    False Positive Matrix: should never happen on this host outside a test.
+  -->
+  <rule id="110009" level="12">
+    <if_sid>60001</if_sid>
+    <field name="win.system.providerName">Microsoft-Windows-Windows Defender</field>
+    <field name="win.system.eventID">^5001$</field>
+    <description>Windows Defender real-time protection disabled on $(win.system.computer), defense evasion</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>windows_bait,defense_evasion,defender_disabled,</group>
+  </rule>
+
+  <!--
+    Rule ID:      110010
+    Purpose:      Windows Firewall rule added (4946), changed (4947) or a
+                  setting changed (4950). Opening a port is how a C2 listener
+                  or a second way in gets set up.
+    Author:       Mohammed Aadil Khan
+    Date:         October 2026 (built), 2026-10-14 (validated)
+    Parent:       60103 (audit success)
+    Log Source:   Windows Security log, 4946 / 4947 / 4950
+    MITRE ATT&CK: T1562.004 Impair Defenses: Disable or Modify System Firewall
+    False Positive Matrix: legitimate changes during maintenance only.
+  -->
+  <rule id="110010" level="10">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID" type="pcre2">^(4946|4947|4950)$</field>
+    <description>Windows Firewall rule changed (event $(win.system.eventID)) on $(win.system.computer), possible defense evasion</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>windows_bait,defense_evasion,firewall_change,</group>
+  </rule>
+
+</group>

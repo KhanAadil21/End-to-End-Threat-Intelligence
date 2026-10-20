@@ -1,0 +1,23 @@
+<!--
+  Wazuh agent on the Windows Server 2022 bait host.
+  File: C:\Program Files (x86)\ossec-agent\ossec.conf
+  Add inside <ossec_config>, then in an admin PowerShell:
+    Restart-Service -Name wazuhsvc
+
+  Security, System and Application channels are collected by the default
+  agent config. Sysmon and Defender need their own blocks.
+
+  Sysmon install (from C:\Staging):
+    .\Sysmon64.exe -i .\sysmonconfig-export.xml -accepteula
+  Config: SwiftOnSecurity sysmon-config.
+-->
+
+<localfile>
+  <location>Microsoft-Windows-Sysmon/Operational</location>
+  <log_format>eventchannel</log_format>
+</localfile>
+
+<localfile>
+  <location>Microsoft-Windows-Windows Defender/Operational</location>
+  <log_format>eventchannel</log_format>
+</localfile>

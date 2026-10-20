@@ -1,0 +1,28 @@
+<!--
+  Custom decoders for the Wazuh manager.
+  Path on the manager: /var/ossec/etc/decoders/local_decoder.xml
+
+  cowrie-json
+    On Wazuh 4.14 a clean Cowrie JSON line came back "No decoder matched" in
+    wazuh-logtest and fell to rule 1002. The prematch pins Cowrie lines by
+    their opening eventid and hands them to the JSON plugin, so the fields
+    (eventid, src_ip, username, input...) get extracted.
+    Without the plugin_decoder line Wazuh recognises the line but extracts
+    nothing, which looked like "decoding complete" with no fields under it.
+
+  Things I tried and dropped, so nobody repeats them:
+    - A child decoder with <parent>json</parent> plus its own regex, to rename
+      Heralding's reserved "protocol" field. It replaced the parent's whole
+      field set instead of adding one field (known Wazuh issue). Heralding
+      rules match destination_port now.
+    - A dedicated prematch decoder for ConPot Guardian AST. The real fix was
+      chaining the rules onto built-in rule 86600.
+    - A regex decoder to clean Dionaea's flattened FTP command array. The live
+      rule 100076 uses pcre2 word boundaries instead. Also learned that
+      plugin_decoder and regex cannot sit in the same decoder block, and that
+      decoder regex needs type="pcre2" for capture groups.
+-->
+<decoder name="cowrie-json">
+  <prematch>^{"eventid":"cowrie\.</prematch>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>

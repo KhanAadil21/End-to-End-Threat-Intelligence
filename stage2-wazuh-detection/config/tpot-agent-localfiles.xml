@@ -1,0 +1,51 @@
+<!--
+  Wazuh agent on the T-Pot honeypot (Ubuntu 26.04).
+  Add these inside <ossec_config> in /var/ossec/etc/ossec.conf, then:
+    sudo systemctl restart wazuh-agent
+
+  The agent never finds log files on its own. T-Pot's installer only wires up
+  its own system monitors (df, netstat, last), so every honeypot log needs a
+  block here.
+
+  Use the HOST path. Each container prints its log path from inside Docker
+  (Heralding says /var/log/heralding/...), but T-Pot mounts the logs under
+  ~/tpotce/data/<honeypot>/log/ on the host.
+
+  Dionaea and RDPHoneyPot use a wildcard. Run ls on the folder and pin the
+  exact filename if you prefer.
+-->
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/cowrie/log/cowrie.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/heralding/log/log_session.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/conpot/log/conpot_guardian_ast.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/conpot/log/conpot_IEC104.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/conpot/log/conpot_kamstrup_382.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/dionaea/log/*.json</location>
+</localfile>
+
+<localfile>
+  <log_format>json</log_format>
+  <location>/home/tpotadmin/tpotce/data/rdphoneypot/log/*.json</location>
+</localfile>

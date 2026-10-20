@@ -1,0 +1,262 @@
+<!--
+================================================================================
+  COWRIE SSH/TELNET HONEYPOT: CUSTOM DETECTION RULES
+  Rule ID range:   100010-100019
+  Decoder:         cowrie-json (decoders/local_decoder.xml)
+  Log source:      /home/tpotadmin/tpotce/data/cowrie/log/cowrie.json
+                   (one JSON event per line, shipped by the T-Pot Wazuh agent)
+  Parent rules:    none except 100011 and 100014, which chain off 100010 and
+                   100013. Every other rule matches the decoded eventid directly.
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Build notes
+  - 100010 first chained off built-in rule 657 and matched the word "failed".
+    657 is a syslog auth rule, so a JSON event could never reach it. Rewritten
+    to match eventid on the decoded JSON.
+  - 100011 used <same_source_ip/> at first. That checks Wazuh's static srcip
+    field, which my decoder never fills. Cowrie writes src_ip, so the rule
+    uses <same_field>src_ip</same_field> now.
+  - frequency and timeframe have to be attributes on the rule tag. As child
+    tags the manager refuses to load the file.
+  - Every Cowrie eventid seen on the box is covered. The four that carry no
+    attacker decision share one level 0 rule (100019).
+================================================================================
+-->
+
+<group name="cowrie_authentication,">
+
+  <!--
+    Rule ID:      100010
+    Purpose:      One failed login against the Cowrie SSH/Telnet emulator.
+                  Low on its own. It feeds the brute force rule 100011.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-27
+    Log Source:   cowrie.json, eventid cowrie.login.failed
+    MITRE ATT&CK: T1110 Brute Force, T1110.001 Password Guessing (Credential Access)
+    False Positive Matrix:
+      Nothing legitimate logs in to a decoy, so there are no real false
+      positives. The catch is volume: bots fail many times a minute, which is
+      why this sits at level 4 and 100011 does the escalating.
+  -->
+  <rule id="100010" level="4">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.login\.failed$</field>
+    <description>Cowrie honeypot: failed login from $(src_ip) with username: $(username) and password: $(password)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>cowrie,authentication_failed,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100011
+    Purpose:      Brute force. The same src_ip fails 5 logins inside 120 seconds.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-27
+    Log Source:   Built on 100010 (if_matched_sid)
+    MITRE ATT&CK: T1110 Brute Force, T1110.001 Password Guessing (Credential Access)
+    False Positive Matrix:
+      Internet-wide scanners that try a short list of default credentials will
+      trip it. On a honeypot that is the behaviour I want to see, not noise.
+  -->
+  <rule id="100011" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100010</if_matched_sid>
+    <same_field>src_ip</same_field>
+    <description>Cowrie honeypot: possible brute force, 5+ failed logins in 120s from $(src_ip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>cowrie,authentication_failures,brute_force,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100012
+    Purpose:      Successful login. The attacker now has the emulated shell,
+                  which makes this the most useful Cowrie alert to read first.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-27
+    Log Source:   cowrie.json, eventid cowrie.login.success
+    MITRE ATT&CK: T1078 Valid Accounts (Initial Access),
+                  T1021.004 Remote Services: SSH (Lateral Movement)
+    False Positive Matrix:
+      None. Cowrie accepts weak credentials on purpose so this fires and a
+      session starts. Treat each alert as a pointer to the 100013, 100014 and
+      100016 events with the same session ID.
+  -->
+  <rule id="100012" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.login\.success$</field>
+    <description>Cowrie honeypot: successful login from $(src_ip) with username: $(username), password: $(password). Attacker has shell access</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1021.004</id>
+    </mitre>
+    <group>cowrie,authentication_success,session_start,</group>
+  </rule>
+
+</group>
+
+<group name="cowrie_session,">
+
+  <!--
+    Rule ID:      100013
+    Purpose:      Any command typed into the emulated shell. Baseline record of
+                  the session, and the parent of 100014.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-27
+    Log Source:   cowrie.json, eventid cowrie.command.input
+    MITRE ATT&CK: T1059 Command and Scripting Interpreter, T1059.004 Unix Shell (Execution)
+    False Positive Matrix:
+      None. Everything typed here comes from an attacker. No keyword filter on
+      purpose, so it doubles as a full audit trail per session.
+  -->
+  <rule id="100013" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.command\.input$</field>
+    <description>Cowrie honeypot: command from $(src_ip): $(input)</description>
+    <mitre>
+      <id>T1059</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>cowrie,command_input,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100014
+    Purpose:      Escalates 100013 when the command looks like post-exploitation:
+                  pulling tools, changing permissions, decoding payloads,
+                  dropping to a shell, touching passwords or pivoting over SSH.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-28 (built), 2026-10-14 (keyword list tightened)
+    Log Source:   Built on 100013 (if_sid)
+    MITRE ATT&CK: T1105 Ingress Tool Transfer (wget, curl)
+                  T1222 File and Directory Permissions Modification (chmod)
+                  T1027 Obfuscated Files or Information (base64)
+                  T1059.004 Unix Shell (/bin/sh, busybox, python)
+                  T1098 Account Manipulation (passwd)
+    False Positive Matrix:
+      The word list uses word boundaries, so "nc" inside a longer word or a
+      file path will not match. A command that only lists files or changes
+      directory stays at 100013. Re-tune the list if real traffic shows a
+      tool I have not covered.
+  -->
+  <rule id="100014" level="12">
+    <if_sid>100013</if_sid>
+    <field name="input" type="pcre2">(?:\b(?:wget|curl|chmod|base64|python[0-9.]*|nc|busybox|passwd|ssh)\b|rm\s+-rf|/bin/sh)</field>
+    <description>Cowrie honeypot: potentially dangerous command from $(src_ip): $(input)</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1222</id>
+      <id>T1027</id>
+      <id>T1059.004</id>
+      <id>T1098</id>
+    </mitre>
+    <group>cowrie,command_input,dangerous_command,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100015
+    Purpose:      End of a session, so a timeline can be read from connect to close.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-28
+    Log Source:   cowrie.json, eventid cowrie.session.closed
+    MITRE ATT&CK: not mapped. Closing a session is not an attacker technique.
+    False Positive Matrix: n/a, informational marker only.
+  -->
+  <rule id="100015" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.session\.closed$</field>
+    <description>Cowrie honeypot: session closed for $(src_ip) after $(duration)s</description>
+    <group>cowrie,session_end,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100016
+    Purpose:      A file was downloaded inside the shell. Cowrie stores the file
+                  and its hash, so this is usually a malware payload worth pulling.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-28
+    Log Source:   cowrie.json, eventid cowrie.session.file_download
+    MITRE ATT&CK: T1105 Ingress Tool Transfer (Command and Control)
+    False Positive Matrix:
+      None on this host. One wget can fire both 100014 (the command text) and
+      this rule (the completed download). That is two separate signals.
+  -->
+  <rule id="100016" level="14">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.session\.file_download$</field>
+    <description>Cowrie honeypot: $(src_ip) downloaded a file to $(outfile)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>cowrie,file_downloaded,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100017
+    Purpose:      A command the fake shell did not recognise. Several in a row
+                  from one session often means the attacker is testing whether
+                  the box is a honeypot.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-28
+    Log Source:   cowrie.json, eventid cowrie.command.failed
+    MITRE ATT&CK: T1059 Command and Scripting Interpreter, T1059.004 Unix Shell
+    False Positive Matrix:
+      None. Worth a manual look if it repeats a lot inside one session.
+  -->
+  <rule id="100017" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.command\.failed$</field>
+    <description>Cowrie honeypot: unrecognised command from $(src_ip): $(input)</description>
+    <mitre>
+      <id>T1059</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>cowrie,command_failed,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100018
+    Purpose:      A new connection to the emulator, before any login.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-09-28
+    Log Source:   cowrie.json, eventid cowrie.session.connect
+    MITRE ATT&CK: T1046 Network Service Discovery (Discovery)
+    False Positive Matrix: none, any connection to the decoy is unsolicited.
+  -->
+  <rule id="100018" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^cowrie\.session\.connect$</field>
+    <description>Cowrie honeypot: new connection from $(src_ip)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>cowrie,session_connect,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100019
+    Purpose:      Tags four eventids that are not attacker decisions: the SSH
+                  version banner, the key exchange list, Cowrie's session
+                  parameters and its own log closing. Level 0 keeps them
+                  searchable without raising alerts.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03 (built as 100020), 2026-10-14 (moved to 100019)
+    Log Source:   cowrie.json, eventids cowrie.client.version, cowrie.client.kex,
+                  cowrie.session.params, cowrie.log.closed
+    MITRE ATT&CK: left out on purpose. A version banner or kex list is just the
+                  SSH protocol doing its job, and the other two are Cowrie
+                  housekeeping. Tagging them would inflate coverage for nothing.
+    False Positive Matrix: n/a, never alerts.
+  -->
+  <rule id="100019" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="eventid" type="pcre2">^cowrie\.(client\.(version|kex)|session\.params|log\.closed)$</field>
+    <description>Cowrie honeypot: protocol telemetry $(eventid) from $(src_ip)</description>
+    <group>cowrie,telemetry,</group>
+  </rule>
+
+</group>
