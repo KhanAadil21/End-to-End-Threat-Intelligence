@@ -188,68 +188,68 @@ The parts of this stage I learned the most from. Each one is written as what I s
 ### Wazuh pipeline
 
 **1. Agent would not enroll.**
-- *What I saw:* The honeypot kept failing to reach the manager on port 1515. tcpdump on the manager showed the SYN arriving with no reply.
-- *What was wrong:* I'd added the firewall rule for the agent ports on the honeypot instead of the manager.
-- *Fix:* Moving it to the right box fixed it instantly. Since then, I always check which side of the connection a rule actually lives on.
+- **What I saw:** The honeypot kept failing to reach the manager on port 1515. tcpdump on the manager showed the SYN arriving with no reply.
+- **What was wrong:** I'd added the firewall rule for the agent ports on the honeypot instead of the manager.
+- **Fix:** Moving it to the right box fixed it instantly. Since then, I always check which side of the connection a rule actually lives on.
 
 **2. Rule could never fire.**
-- *What was wrong:* I'd based it on one of Wazuh's built-in login-failure rules. That rule is written for old syslog-style logs, and Cowrie sends JSON, so my rule had no way in no matter what else it checked.
-- *Fix:* match `decoded_as json` plus the decoded `eventid` directly, the same pattern Wazuh's own Suricata rules use.
+- **What was wrong:** I'd based it on one of Wazuh's built-in login-failure rules. That rule is written for old syslog-style logs, and Cowrie sends JSON, so my rule had no way in no matter what else it checked.
+- **Fix:** match `decoded_as json` plus the decoded `eventid` directly, the same pattern Wazuh's own Suricata rules use.
 
 **3. Brute force rule silently dead.**
-- *What was wrong:* I'd used `<same_source_ip/>`, which sounds right. It actually compares a built-in field called `srcip`, and Cowrie calls its field `src_ip`.
-- *Fix:* Switching to `<same_field>src_ip</same_field>` fixed it.
+- **What was wrong:** I'd used `<same_source_ip/>`, which sounds right. It actually compares a built-in field called `srcip`, and Cowrie calls its field `src_ip`.
+- **Fix:** Switching to `<same_field>src_ip</same_field>` fixed it.
 
 **4. Reserved field names.**
-- *What I saw:* Heralding records the service in a field called `protocol`, and that's one of 13 names Wazuh reserves.
-- *What I tried:*
+- **What I saw:** Heralding records the service in a field called `protocol`, and that's one of 13 names Wazuh reserves.
+- **What I tried:**
   - I tried renaming it with a decoder, which wiped out every other field. 
 - Then I tried Wazuh's special tag for it, which hit a separate bug.
-- *Fix:* In the end I matched on the destination port, since each Heralding service listens on a fixed port anyway. Dionaea has the same field, but nested as `connection.protocol`, and that name isn't reserved.
+- **Fix:** In the end I matched on the destination port, since each Heralding service listens on a fixed port anyway. Dionaea has the same field, but nested as `connection.protocol`, and that name isn't reserved.
 
 **5. A correct rule kept losing.**
-- *What I saw:* My ConPot rules decoded perfectly in testing, but a built-in rule at level 0 won every time, phase 3 always picked built-in 86600 (level 0).
-- *What I ruled out:* I ruled out broken XML (`xmllint`), duplicate IDs and load errors before trying `<if_sid>86600</if_sid>` to hang my rules off that built-in one.
-- *Fix:* `<if_sid>86600</if_sid>`. 86600 acts as the root rule for that JSON path. It is not needed everywhere: Dionaea's rules fire without it, so I test standalone first.
+- **What I saw:** My ConPot rules decoded perfectly in testing, but a built-in rule at level 0 won every time, phase 3 always picked built-in 86600 (level 0).
+- **What I ruled out:** I ruled out broken XML (`xmllint`), duplicate IDs and load errors before trying `<if_sid>86600</if_sid>` to hang my rules off that built-in one.
+- **Fix:** `<if_sid>86600</if_sid>`. 86600 acts as the root rule for that JSON path. It is not needed everywhere: Dionaea's rules fire without it, so I test standalone first.
 
 **6. JSON null is not empty.**
-- *What I saw:* A rule meant to catch commands sent to the Kamstrup meter fired on every plain connection.
-- *What was wrong:* Wazuh turns a JSON `null` into the text "null", which counts as "has a value", which satisfies `.+`.
-- *Fix:* The fix was to match anything that isn't exactly `null` so `negate="yes"` on `^null$`.
+- **What I saw:** A rule meant to catch commands sent to the Kamstrup meter fired on every plain connection.
+- **What was wrong:** Wazuh turns a JSON `null` into the text "null", which counts as "has a value", which satisfies `.+`.
+- **Fix:** The fix was to match anything that isn't exactly `null` so `negate="yes"` on `^null$`.
 
 **7. Arrays become strings.**
-- *What I saw:* Dionaea's `ftp.commands.command` and Heralding's `auth_attempts` are JSON arrays, but the decoder flattens them into one string like `['USER', 'PASS']`. That killed my first approach of checking each command against an allow-list.
-- *What failed:* an anchored allow-list can never match a multi-command session.
-- *Fix:*  The rule now looks for the normal FTP words anywhere in that string and now uses pcre2 word boundaries.
+- **What I saw:** Dionaea's `ftp.commands.command` and Heralding's `auth_attempts` are JSON arrays, but the decoder flattens them into one string like `['USER', 'PASS']`. That killed my first approach of checking each command against an allow-list.
+- **What failed:** an anchored allow-list can never match a multi-command session.
+- **Fix:**  The rule now looks for the normal FTP words anywhere in that string and now uses pcre2 word boundaries.
 
 **8. Rule dependencies can create blind spots.**
-- *What was wrong:* I'd made the FTP command rule depend on the credential rule. That meant any session that sent commands without logging in was invisible, including a real scanner probe I'd already captured.
-- *Fix:* the two signals are independent, so the rules are too.
+- **What was wrong:** I'd made the FTP command rule depend on the credential rule. That meant any session that sent commands without logging in was invisible, including a real scanner probe I'd already captured.
+- **Fix:** the two signals are independent, so the rules are too.
 
 **9. Unscoped matches leak across sources.**
-- *What I saw:* a Heralding rule matching the raw text `"protocol":` also fired on Dionaea SMB logs.
-- *Fix:* every rule is scoped to something only its own source writes.
+- **What I saw:** a Heralding rule matching the raw text `"protocol":` also fired on Dionaea SMB logs.
+- **Fix:** every rule is scoped to something only its own source writes.
 
 ### Windows bait host
 
 **10. No way to download tools.**
-- *What I saw:* The server couldn't resolve DNS, and the Wazuh installer kept arriving cut off at 5.66 MB instead of about 34 MB.
-- *Fix:* I staged Sysmon, its config and the MSI over RDP drive and clipboard redirection, checking file size before running anything.
+- **What I saw:** The server couldn't resolve DNS, and the Wazuh installer kept arriving cut off at 5.66 MB instead of about 34 MB.
+- **Fix:** I staged Sysmon, its config and the MSI over RDP drive and clipboard redirection, checking file size before running anything.
 
 **11. The new Windows agent hijacked the honeypot's identity.**
-- *What I saw:* While enrolling the Windows box, I imported a key that belonged to the existing T-Pot agent. You could tell from the dashboard: that ID showed Ubuntu 26.04 and the honeypot's VPC address.
-- *What was wrong:* the ID belonged to the T-Pot agent, so two hosts were fighting over one identity.
-- *Fix:* registered the Windows host as its own agent. A Wazuh key belongs to exactly one agent.
+- **What I saw:** While enrolling the Windows box, I imported a key that belonged to the existing T-Pot agent. You could tell from the dashboard: that ID showed Ubuntu 26.04 and the honeypot's VPC address.
+- **What was wrong:** the ID belonged to the T-Pot agent, so two hosts were fighting over one identity.
+- **Fix:** registered the Windows host as its own agent. A Wazuh key belongs to exactly one agent.
 
 **12. Re-registration after the network change.**
-- *What I saw:* A `Duplicate agent name`, because the old entry still existed.
-- *Fix:* I removed it with `manage_agents -r` and re-ran `agent-auth.exe` against the manager's public address.
+- **What I saw:** A `Duplicate agent name`, because the old entry still existed.
+- **Fix:** I removed it with `manage_agents -r` and re-ran `agent-auth.exe` against the manager's public address.
 - `manage_agents` handles keys. `agent_control -i` is the one that shows status.
 
 **13. Locking down the API.**
 - **What I saw:** Binding the Wazuh API to localhost took three tries. `ss -tlnp` showed the Wazuh API on `0.0.0.0:55000`.
-- *What failed:* a plain string in `api.yaml` crashed the manager, and `['127.0.0.1', '::']` left IPv6 open.
-- *Fix:* Changed to `host: ['127.0.0.1']`, a YAML list with one entry.
+- **What failed:** a plain string in `api.yaml` crashed the manager, and `['127.0.0.1', '::']` left IPv6 open.
+- **Fix:** Changed to `host: ['127.0.0.1']`, a YAML list with one entry.
 
 ## Repository layout and deployment
 
