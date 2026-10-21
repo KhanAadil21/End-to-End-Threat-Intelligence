@@ -192,6 +192,8 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 - Wazuh agent 4.14.8, matching the manager.
 - Windows Firewall and the Vultr group both allow 3389. Verified with `nmap -Pn` (host drops ICMP) going from `filtered` to `open`.
 
+![All the Virtual Machines](stage2-wazuh-detection/Images/vultr-screenshot.png)
+
 ![Both agents active](stage2-wazuh-detection/Images/wazuh-agent-cheklist.png)
 *Both agents reporting in, each on Wazuh 4.14.8 to match the manager.*
 
