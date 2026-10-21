@@ -17,13 +17,13 @@ Stage 1 collected live attack traffic into a self-managed ELK stack, roughly 18.
 10. [Known limitations and next steps](#known-limitations-and-next-steps)
 
 
-![Custom rule alerts over 30 minutes](docs/images/alerts-volume.png)
+![Custom rule alerts over 30 minutes](stage2-wazuh-detection/Images/cowrie-dionaea-rdpy.png)
 *Half an hour of my rules firing on real traffic: 5,652 alerts across Cowrie, Dionaea and the RDP honeypot.*
 
 
 ## Architecture
 
-
+![Architecture](stage2-wazuh-detection/Images/stage2-diagram.png)
 
 **Why the two agents reach the manager differently**
 
@@ -37,7 +37,7 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 - **UFW on the manager.** Allows SSH, agent ports 1514/1515, and the VPC subnet, nothing else.
 - **Both firewall layers.** Every port is opened in the Vultr group and in UFW. Opening one is never enough.
 
-## Wazuh setup: manager and T-Pot agent
+## Wazuh setup: Manager and T-Pot agent
 
 **Manager**
 - Wazuh 4.14.8 on a dedicated Ubuntu instance in the same Vultr VPC as T-Pot. It stays off the ELK box so the two stacks don't fight over memory.
@@ -59,7 +59,7 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 - Wazuh agent 4.14.8, matching the manager.
 - Windows Firewall and the Vultr group both allow 3389. Verified with `nmap -Pn` (host drops ICMP) going from `filtered` to `open`.
 
-![Both agents active](docs/images/agents.png)
+![Both agents active](stage2-wazuh-detection/Images/wazuh-agent-cheklist.png)
 *Both agents reporting in, each on Wazuh 4.14.8 to match the manager.*
 
 **How I validated rules**
@@ -71,8 +71,13 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 
 `wazuh-logtest` treats every line as a fresh event, so a "5 failures in 2 minutes" rule can only be proven against the live pipeline.
 
-![wazuh-logtest on a real Cowrie line](docs/images/logtest-cowrie.png)
+![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-cowrie-rules.png)
 *A real failed login run through `wazuh-logtest`. Phase 2 is what the decoder extracted, Phase 3 is my rule 100010 matching with its ATT&CK tags.*
+
+![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-heralding-rules.png)
+
+![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-windows-rules.png)
+
 
 ## Rule inventory
 
