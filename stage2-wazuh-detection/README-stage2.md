@@ -247,7 +247,7 @@ The parts of this stage I learned the most from. Each one is written as what I s
 - `manage_agents` handles keys. `agent_control -i` is the one that shows status.
 
 **13. Locking down the API.**
-- *What I saw:* Binding the Wazuh API to localhost took three tries. `ss -tlnp` showed the Wazuh API on `0.0.0.0:55000`.
+- **What I saw:** Binding the Wazuh API to localhost took three tries. `ss -tlnp` showed the Wazuh API on `0.0.0.0:55000`.
 - *What failed:* a plain string in `api.yaml` crashed the manager, and `['127.0.0.1', '::']` left IPv6 open.
 - *Fix:* Changed to `host: ['127.0.0.1']`, a YAML list with one entry.
 
