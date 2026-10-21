@@ -143,19 +143,15 @@ Stage 1 collected live attack traffic into a self-managed ELK stack, roughly 18.
 ## Contents
 
 1. [Architecture](#architecture)
-2. [Build timeline](#build-timeline)
-3. [Wazuh setup: manager and T-Pot agent](#wazuh-setup-manager-and-t-pot-agent)
-4. [Windows RDP bait host](#windows-rdp-bait-host)
-5. [Rule inventory](#rule-inventory)
-6. [Severity model](#severity-model)
-7. [Problems I ran into](#problems-i-ran-into)
-8. [What real attackers did](#what-real-attackers-did)
-9. [Repository layout and deployment](#repository-layout-and-deployment)
-10. [Known limitations and next steps](#known-limitations-and-next-steps)
+2. [Wazuh setup: manager and T-Pot agent](#wazuh-setup-manager-and-t-pot-agent)
+3. [Windows RDP bait host](#windows-rdp-bait-host)
+4. [Rule inventory](#rule-inventory)
+5. [Severity model](#severity-model)
+6. [Problems I ran into](#problems-i-ran-into)
+7. [What real attackers did](#what-real-attackers-did)
+8. [Repository layout and deployment](#repository-layout-and-deployment)
+9. [Known limitations and next steps](#known-limitations-and-next-steps)
 
-
-![Custom rule alerts over 30 minutes](stage2-wazuh-detection/Images/cowrie-dionaea-rdpy.png)
-*Half an hour of my rules firing on real traffic: 5,652 alerts across Cowrie, Dionaea and the RDP honeypot.*
 
 
 ## Architecture
