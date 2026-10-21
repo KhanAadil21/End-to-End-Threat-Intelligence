@@ -17,7 +17,7 @@ Stage 1 collected live attack traffic into a self-managed ELK stack, roughly 18.
 10. [Known limitations and next steps](#known-limitations-and-next-steps)
 
 
-![Custom rule alerts over 30 minutes](honeypot-threat-intelligence/stage2-wazuh-detection/Images/cowrie-dionaea-rdpy.png)
+![Custom rule alerts over 30 minutes](./honeypot-threat-intelligence/stage2-wazuh-detection/Images/cowrie-dionaea-rdpy.png)
 *Half an hour of my rules firing on real traffic: 5,652 alerts across Cowrie, Dionaea and the RDP honeypot.*
 
 
