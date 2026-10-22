@@ -205,13 +205,15 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 `wazuh-logtest` treats every line as a fresh event, so a "5 failures in 2 minutes" rule can only be proven against the live pipeline.
 
 ![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-cowrie-rules.png)
-*A real failed login run through `wazuh-logtest`. Phase 2 is what the decoder extracted, Phase 3 is my rule 100010 matching with its ATT&CK tags.*
+*A real failed login run through `wazuh-logtest`. 
+Phase 2 is what the decoder extracted, 
+Phase 3 is my rule 100010 matching with its ATT&CK tags.*
 
 ![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-heralding-rules.png)
-*A real Heralding log through 'wazuh-logtest'.
+*A real Heralding log through 'wazuh-logtest'.*
 
 ![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-windows-rules.png)
-*A real Windows log through 'wazuh-logtest'.
+*A real Windows log through 'wazuh-logtest'.*
 
 
 ## Rule inventory
@@ -317,6 +319,7 @@ It didn't take long for the real thing to show up. Within a day of opening RDP, 
 
 ![windows honeypot alerts](stage2-wazuh-detection/Images/windows-honeypot-alerts.png) 
 
+*Over 130,000 alerts from the bait host in two days. Wazuh's built-in rules log each failed logon, and my 110001 and 110003 flag the ones aimed at the bait account.*
 ---
 
 ## Problems I ran into
