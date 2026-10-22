@@ -281,6 +281,7 @@ Per-service levels follow a priority call: VNC first (live desktop control), the
 | 100065 | 8 | Kamstrup meter protocol | Data/command sent | T0888 |
 
 ![conpot_fuel_command](stage2-wazuh-detection/Images/conpot-fuel-command.png)
+
 *A real I20100 command sent to the fake fuel tank gauge, and the fake tank inventory it sent back, matched by 100042.*
 
 
