@@ -208,8 +208,10 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 *A real failed login run through `wazuh-logtest`. Phase 2 is what the decoder extracted, Phase 3 is my rule 100010 matching with its ATT&CK tags.*
 
 ![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-heralding-rules.png)
+*A real Heralding log through 'wazuh-logtest'.
 
 ![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-windows-rules.png)
+*A real Windows log through 'wazuh-logtest'.
 
 
 ## Rule inventory
@@ -313,7 +315,7 @@ In PowerShell, `sc` is an alias for `Set-Content`, so the service test has to ca
 
 It didn't take long for the real thing to show up. Within a day of opening RDP, bots were hammering the `support` account:
 
-windows bait picture
+![windows honeypot alerts](stage2-wazuh-detection/Images/windows-honeypot-alerts.png) 
 
 ---
 
