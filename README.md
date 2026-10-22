@@ -320,6 +320,7 @@ It didn't take long for the real thing to show up. Within a day of opening RDP, 
 ![windows honeypot alerts](stage2-wazuh-detection/Images/windows-honeypot-alerts.png) 
 
 *Over 130,000 alerts from the bait host in two days. Wazuh's built-in rules log each failed logon, and my 110001 and 110003 flag the ones aimed at the bait account.*
+
 ---
 
 ## Problems I ran into
