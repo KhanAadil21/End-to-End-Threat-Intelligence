@@ -138,20 +138,16 @@ On the design side, keeping the exposed machine as simple as possible paid off. 
 # Stage 2: Detection Engineering with Wazuh
 
 **Part 2 of 3 of the T-Pot/Vultr Honeypot Threat Intel Project.**
-Stage 1 collected live attack traffic into a self-managed ELK stack, roughly 18.8 million events over the first two weeks. Stage 2 adds the detection layer: a dedicated Wazuh SIEM, two monitored decoys, and 51 custom rules I wrote by hand from real attacker log lines.
+This is the second part of my honeypot project. In Stage 1 I put a T-Pot honeypot on the internet and shipped everything it caught into my own ELK stack. About 18.8 million events landed in the first two weeks.
 
-## Contents
+Kibana is great for looking at that data. It doesn't alert on anything, though, and it has no idea what an attack actually looks like. So for Stage 2 I stood up a Wazuh SIEM, pointed the honeypot at it, added a real Windows server as bait, and wrote the detection rules myself.
 
-1. [Architecture](#architecture)
-2. [Wazuh setup: manager and T-Pot agent](#wazuh-setup-manager-and-t-pot-agent)
-3. [Windows RDP bait host](#windows-rdp-bait-host)
-4. [Rule inventory](#rule-inventory)
-5. [Severity model](#severity-model)
-6. [Problems I ran into](#problems-i-ran-into)
-7. [What real attackers did](#what-real-attackers-did)
-8. [Repository layout and deployment](#repository-layout-and-deployment)
-9. [Known limitations and next steps](#known-limitations-and-next-steps)
+Where it ended up:
 
+51 custom rules: 41 for the T-Pot honeypots, 10 for the Windows box
+Rules for Cowrie, Heralding, RDPHoneyPot, ConPot (three fake ICS devices), Dionaea, and Windows event logs plus Sysmon
+Every alerting rule mapped to MITRE ATT&CK, including the ICS matrix for ConPot
+Every rule seen firing, either on real attack traffic or on a test I ran myself
 
 
 ## Architecture
@@ -196,11 +192,14 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 *Both agents reporting in, each on Wazuh 4.14.8 to match the manager.*
 
 **How I validated rules**
+
+To test a rule, I'd paste a real log line into wazuh-logtest on the manager.
 1. `wazuh-logtest` on the manager with a real captured log line.
    - Phase 2 shows what the decoder extracted.
    - Phase 3 shows which rule won.
 2. Live traffic: either a controlled action (SSH into Cowrie, connect to a port) or waiting for organic attacks.
 3. Alerts checked in `/var/ossec/logs/alerts/alerts.json` and on the dashboard.
+
 
 `wazuh-logtest` treats every line as a fresh event, so a "5 failures in 2 minutes" rule can only be proven against the live pipeline.
 
@@ -219,6 +218,11 @@ Phase 3 is my rule 100010 matching with its ATT&CK tags.*
 ## Rule inventory
 
 Full XML with per-rule notes is in [`rules/`](rules). Levels are Wazuh severity (0-15).
+On a honeypot, everything that shows up is hostile, so "is this bad?" isn't a useful question. I set levels by how far the attacker got instead. Connections and scans sit low (0-5). Credential attempts and real protocol commands land in the middle (6-10). Brute force patterns, successful logins, payload downloads and anything touching admin rights or Defender go high (10-14).
+A couple of patterns show up across the files. One rule records every event of a type, and a second one escalates when something specific shows up (all commands vs. dangerous commands). A single-event rule usually has a correlation rule sitting on top of it to catch the burst (one failed login vs. five in two minutes).
+
+![mitre_attack](stage2-wazuh-detection/Images/mitre&attack_dashboard.png)
+
 
 ### Cowrie, SSH/Telnet (`01_cowrie_rules.xml`, 10 rules)
 
@@ -234,8 +238,6 @@ Full XML with per-rule notes is in [`rules/`](rules). Levels are Wazuh severity 
 | 100017 | 3 | Unrecognised command (often honeypot fingerprinting) | T1059, T1059.004 |
 | 100018 | 3 | New connection | T1046 |
 | 100019 | 0 | Protocol telemetry (version banner, kex, params). Tagged, never alerts | deliberately unmapped |
-
-cowrie picture
 
 ### Heralding, multi-protocol credential capture (`02_heralding_rules.xml`, 9 rules)
 
@@ -253,8 +255,6 @@ cowrie picture
 
 Per-service levels follow a priority call: VNC first (live desktop control), then mail relay abuse, then mailbox and database access.
 
-heralding picture
-
 ### RDPHoneyPot, emulated RDP (`03_rdp_honeypot_rules.xml`, 3 rules)
 
 | ID | Level | Detects | ATT&CK |
@@ -263,7 +263,6 @@ heralding picture
 | 100031 | 5 | Connection opened | T1046 |
 | 100032 | 4 | Connection closed | T1046 |
 
-rdphoneypot picture
 
 ### ConPot, ICS/SCADA (`04_conpot_rules.xml`, 11 rules)
 
@@ -281,7 +280,9 @@ rdphoneypot picture
 | 100064 | 3 | Kamstrup meter protocol | Connection lost | T0846 |
 | 100065 | 8 | Kamstrup meter protocol | Data/command sent | T0888 |
 
-conpot picture
+![conpot_fuel_command](stage2-wazuh-detection/Images/conpot-fuel-command.png)
+*A real I20100 command sent to the fake fuel tank gauge, and the fake tank inventory it sent back, matched by 100042.*
+
 
 ### Dionaea, malware capture (`05_dionaea_rules.xml`, 8 rules)
 
@@ -296,7 +297,6 @@ conpot picture
 | 100075 | 10 | FTP command activity | T1595 |
 | 100076 | 12 | Non-FTP data on the FTP port (scanners, raw TLS, HTTP probes) | T1595.002 |
 
-Dionaea picture
 
 ### Windows bait host (`06_windows_bait_rules.xml`, 10 rules)
 
@@ -318,7 +318,6 @@ In PowerShell, `sc` is an alias for `Set-Content`, so the service test has to ca
 It didn't take long for the real thing to show up. Within a day of opening RDP, bots were hammering the `support` account:
 
 ![windows honeypot alerts](stage2-wazuh-detection/Images/windows-honeypot-alerts.png) 
-
 *Over 130,000 alerts from the bait host in two days. Wazuh's built-in rules log each failed logon, and my 110001 and 110003 flag the ones aimed at the bait account.*
 
 ---
@@ -365,6 +364,8 @@ The parts of this stage I learned the most from. Each one is written as what I s
 - **What I saw:** Dionaea's `ftp.commands.command` and Heralding's `auth_attempts` are JSON arrays, but the decoder flattens them into one string like `['USER', 'PASS']`. That killed my first approach of checking each command against an allow-list.
 - **What failed:** an anchored allow-list can never match a multi-command session.
 - **Fix:**  The rule now looks for the normal FTP words anywhere in that string and now uses pcre2 word boundaries.
+![dionaea_ftpd](stage2-wazuh-detection/Images/dionaea-ftpd-command-execution.png)
+*A scanner sending an HTTP request to the FTP port. Note how ftp.commands.command arrives as one flattened string. Rule 100076 catches it.*
 
 **8. Rule dependencies can create blind spots.**
 - **What was wrong:** I'd made the FTP command rule depend on the credential rule. That meant any session that sent commands without logging in was invisible, including a real scanner probe I'd already captured.
