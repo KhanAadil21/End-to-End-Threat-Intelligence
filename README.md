@@ -9,7 +9,7 @@ Stage 1 is finished and documented below.
 | Stage | What it adds | Status |
 |-------|--------------|--------|
 | 1 | Honeypot VM, Elastic Stack data server, Kibana dashboard | Done |
-| 2 | A detection layer built on top of the same logs | Coming soon |
+| 2 | [Stage 2: Detection Engineering with Wazuh]A detection layer built on top of the same logs | Done |
 | 3 | Automated alerting and response | Coming soon |
 
 ---
