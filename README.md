@@ -133,9 +133,8 @@ On the design side, keeping the exposed machine as simple as possible paid off. 
 
 ---
 
-## Stage 2: 
 
-# Stage 2: Detection Engineering with Wazuh
+## Stage 2: Detection Engineering with Wazuh
 
 **Part 2 of 3 of the T-Pot/Vultr Honeypot Threat Intel Project.**
 This is the second part of my honeypot project. In Stage 1 I put a T-Pot honeypot on the internet and shipped everything it caught into my own ELK stack. About 18.8 million events landed in the first two weeks.
