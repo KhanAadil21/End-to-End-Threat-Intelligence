@@ -1,0 +1,8 @@
+{
+  "tenant_id": "<ENTRA_TENANT_ID>",
+  "client_id": "<APP_REGISTRATION_CLIENT_ID>",
+  "client_secret": "<APP_REGISTRATION_CLIENT_SECRET>",
+  "ingestion_endpoint": "https://<dce-name>.<region>-1.ingest.monitor.azure.com",
+  "dcr_immutable_id": "dcr-<immutable-id>",
+  "stream_name": "Custom-WazuhAlerts_CL"
+}

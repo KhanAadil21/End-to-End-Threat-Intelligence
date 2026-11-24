@@ -1,0 +1,227 @@
+<!--
+================================================================================
+  HERALDING MULTI-PROTOCOL CREDENTIAL HONEYPOT: CUSTOM DETECTION RULES
+  Rule ID range:   100021-100029
+  Decoder:         none, generic JSON decoder (decoded_as json)
+  Log source:      /home/tpotadmin/tpotce/data/heralding/log/log_session.json
+                   One line per session: source_ip, destination_port, protocol,
+                   num_auth_attempts, auth_attempts and so on.
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Build notes
+  - Heralding has no eventid, and its service field is called "protocol",
+    which is one of Wazuh's 13 reserved static field names. I tried three
+    ways to match on it (field tag, static tag, a child decoder that renamed
+    it). Each one hit a Wazuh parsing bug or wiped the other decoded fields.
+  - What works: match on destination_port instead. Every Heralding service
+    has a fixed port, and Dionaea writes dst_port, so the two honeypots
+    cannot collide on these rules.
+  - An earlier catch-all rule matched the raw text "protocol": and ended up
+    firing on Dionaea SMB logs too. Lesson kept: scope every match to
+    something only this source writes.
+  - auth_attempts is a JSON array of objects. The decoder flattens it into
+    one string, so individual usernames cannot be matched as fields.
+================================================================================
+-->
+
+<group name="heralding_services,">
+
+  <!--
+    Rule ID:      100021
+    Purpose:      Session against Heralding's VNC listener. Highest of the port
+                  rules because a working VNC login hands over a live desktop.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03
+    Log Source:   log_session.json, destination_port 5900
+    MITRE ATT&CK: T1110 Brute Force, T1021.005 Remote Services: VNC
+    False Positive Matrix:
+      Most VNC sessions I captured carry null credentials, meaning a scanner
+      fingerprinting the port. Still unsolicited, so still logged.
+  -->
+  <rule id="100021" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^5900$</field>
+    <description>Heralding honeypot: VNC session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021.005</id>
+    </mitre>
+    <group>heralding,vnc,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100022
+    Purpose:      Session against the SMTPS listener (implicit TLS mail
+                  submission). Stolen mail logins get reused for spam and
+                  phishing relay, hence level 7.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03
+    Log Source:   log_session.json, destination_port 465
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none, there is no real mail service on this host.
+  -->
+  <rule id="100022" level="7">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^465$</field>
+    <description>Heralding honeypot: SMTPS session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,smtps,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100023
+    Purpose:      Session against the POP3 listener. One step below SMTPS since
+                  POP3 only reads a mailbox, it cannot send.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03
+    Log Source:   log_session.json, destination_port 110
+    MITRE ATT&CK: T1110 Brute Force
+                  (T1114.002 Remote Email Collection would fit a successful
+                  login, but this rule only sees the attempt.)
+    False Positive Matrix: none.
+  -->
+  <rule id="100023" level="6">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^110$</field>
+    <description>Heralding honeypot: POP3 session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,pop3,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100024
+    Purpose:      Session against the PostgreSQL listener.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03
+    Log Source:   log_session.json, destination_port 5432
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none.
+  -->
+  <rule id="100024" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^5432$</field>
+    <description>Heralding honeypot: PostgreSQL session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,postgresql,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100025
+    Purpose:      Session against the SOCKS5 listener. Bots hunt for open
+                  proxies to bounce their own traffic through.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-05
+    Log Source:   log_session.json, destination_port 1080
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none.
+  -->
+  <rule id="100025" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^1080$</field>
+    <description>Heralding honeypot: SOCKS5 session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,socks5,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100026
+    Purpose:      Session against the IMAP listener.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-05
+    Log Source:   log_session.json, destination_port 143
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none.
+  -->
+  <rule id="100026" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^143$</field>
+    <description>Heralding honeypot: IMAP session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,imap,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100027
+    Purpose:      Session against the IMAPS listener.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-05
+    Log Source:   log_session.json, destination_port 993
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none.
+  -->
+  <rule id="100027" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^993$</field>
+    <description>Heralding honeypot: IMAPS session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,imaps,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100028
+    Purpose:      Session against the POP3S listener. Closes the port 995 gap
+                  left when 100023 only covered plaintext POP3.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-05
+    Log Source:   log_session.json, destination_port 995
+    MITRE ATT&CK: T1110 Brute Force
+    False Positive Matrix: none.
+  -->
+  <rule id="100028" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="destination_port">^995$</field>
+    <description>Heralding honeypot: POP3S session from $(source_ip) on port $(destination_port)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding,pop3s,connection_attempt,</group>
+  </rule>
+
+</group>
+
+<!--
+  Kept in its own wrapper on purpose. The wrapper name becomes a group on the
+  rule, and if it were called "heralding" this rule would count its own alerts.
+-->
+<group name="heralding_correlation,">
+
+  <!--
+    Rule ID:      100029
+    Purpose:      One source_ip sets off any Heralding rule 5 times in 30
+                  seconds. Counts across all eight services, so it catches a
+                  bot sweeping several ports as well as one hammering a single
+                  service. Level 10 sits above the per-port rules (5 to 8).
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-03
+    Log Source:   Built on any rule in the heralding group (if_matched_group)
+    MITRE ATT&CK: T1110 Brute Force (Credential Access)
+    False Positive Matrix:
+      It counts sessions, not submitted passwords. A scanner that connects
+      and drops five times inside 30 seconds will trip it without ever
+      sending a credential. Read the auth_attempts field before calling it a
+      password attack.
+  -->
+  <rule id="100029" level="10" frequency="5" timeframe="30">
+    <if_matched_group>heralding</if_matched_group>
+    <same_field>source_ip</same_field>
+    <description>Heralding honeypot: 5+ sessions in 30s from $(source_ip), likely brute force or service sweep</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>heralding_brute_force,</group>
+  </rule>
+
+</group>

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspace": {
+      "type": "String"
+    }
+  },
+  "resources": [
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/ab2b4d9c-94b0-4029-a112-e2b1152750c2')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/ab2b4d9c-94b0-4029-a112-e2b1152750c2')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2023-12-01-preview",
+      "properties": {
+        "displayName": "Honeypot - Same attacker across multiple honeypots",
+        "description": "One source IP triggered level 7+ alerts on 2 or more different honeypots within 1 hour, a sign of broad scanning or reconnaissance.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "WazuhAlerts_CL\r\n| where isnotempty(SrcIp) and Honeypot != \"other\"\r\n| summarize HoneypotCount = dcount(Honeypot), Honeypots = make_set(Honeypot),\r\n            Alerts = count(), Rules = make_set(RuleId),\r\n            FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated) by SrcIp\r\n| where HoneypotCount >= 2",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "startTimeUtc": null,
+        "tactics": [
+          "Reconnaissance",
+          "Discovery"
+        ],
+        "techniques": [],
+        "subTechniques": [],
+        "alertRuleTemplateName": null,
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "{{SrcIp}} attacked {{HoneypotCount}} honeypots",
+          "alertDescriptionFormat": "{{SrcIp}} triggered level 7+ alerts on {{HoneypotCount}} different honeypots within one hour.",
+          "alertDynamicProperties": []
+        },
+        "customDetails": {
+          "Honeypots": "Honeypots",
+          "Rules": "Rules"
+        },
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SrcIp"
+              }
+            ]
+          }
+        ],
+        "sentinelEntitiesMappings": null,
+        "templateVersion": null
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/c9011334-b53c-43bb-97ae-517668045b11')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/c9011334-b53c-43bb-97ae-517668045b11')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2023-12-01-preview",
+      "properties": {
+        "displayName": "Honeypot - Attacker access/malware delivery",
+        "description": "Wazuh level 12+ alert: a successful login, dangerous command or malware download on a honeypot.",
+        "severity": "High",
+        "enabled": true,
+        "query": "WazuhAlerts_CL\r\n| where RuleLevel >= 12\r\n| project TimeGenerated, RuleId, RuleDescription, Honeypot, SrcIp, Username, Command, Url, FileHash, MitreIds",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT5M",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "startTimeUtc": null,
+        "tactics": [
+          "InitialAccess",
+          "Execution",
+          "CommandAndControl"
+        ],
+        "techniques": [],
+        "subTechniques": [],
+        "alertRuleTemplateName": null,
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": null,
+        "customDetails": null,
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SrcIp"
+              }
+            ]
+          },
+          {
+            "entityType": "URL",
+            "fieldMappings": [
+              {
+                "identifier": "Url",
+                "columnName": "Url"
+              }
+            ]
+          },
+          {
+            "entityType": "FileHash",
+            "fieldMappings": [
+              {
+                "identifier": "Value",
+                "columnName": "FileHash"
+              }
+            ]
+          }
+        ],
+        "sentinelEntitiesMappings": null,
+        "templateVersion": null
+      }
+    }
+  ]
+}

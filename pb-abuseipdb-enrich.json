@@ -1,0 +1,243 @@
+{
+    "definition": {
+        "metadata": {
+            "notes": {}
+        },
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "path": "/incident-creation"
+                }
+            }
+        },
+        "actions": {
+            "Entities_-_Get_IPs": {
+                "runAfter": {},
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                    "path": "/entities/ip"
+                }
+            },
+            "For_each": {
+                "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+                "actions": {
+                    "HTTP": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://api.abuseipdb.com/api/v2/check",
+                            "method": "GET",
+                            "headers": {
+                                "Key": "<ABUSEIPDB_API_KEY>",
+                                "Accept": "appplication/json"
+                            },
+                            "queries": {
+                                "ipAddress": "@{item()?['Address']}",
+                                "maxAgeInDays": "90"
+                            }
+                        },
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            },
+                            "secureData": {
+                                "properties": [
+                                    "inputs",
+                                    "outputs"
+                                ]
+                            }
+                        }
+                    },
+                    "Parse_JSON": {
+                        "runAfter": {
+                            "HTTP": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('HTTP')",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "object",
+                                        "properties": {
+                                            "ipAddress": {
+                                                "type": "string"
+                                            },
+                                            "abuseConfidenceScore": {
+                                                "type": "integer"
+                                            },
+                                            "countryCode": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "isp": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "domain": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "usageType": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "totalReports": {
+                                                "type": "integer"
+                                            },
+                                            "lastReportedAt": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "isTor": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "Add_comment_to_incident_(V3)": {
+                        "runAfter": {
+                            "Parse_JSON": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "body": {
+                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                "message": "<p class=\"editor-paragraph\">AbuseIPDB lookup (automated)</p><p class=\"editor-paragraph\">IP: @{body('Parse_JSON')?['data']?['ipAddress']}</p><p class=\"editor-paragraph\">Abuse confidence score: @{body('Parse_JSON')?['data']?['abuseConfidenceScore']}</p><p class=\"editor-paragraph\">Total Reports (90 days): @{body('Parse_JSON')?['data']?['totalReports']}</p><p class=\"editor-paragraph\">Tor exit node: @{body('Parse_JSON')?['data']?['isTor']}</p><p class=\"editor-paragraph\">Last Reported: @{body('Parse_JSON')?['data']?['lastReportedAt']}</p><p class=\"editor-paragraph\">Country: @{body('Parse_JSON')?['data']?['countryCode']}</p><p class=\"editor-paragraph\">ISP: @{body('Parse_JSON')?['data']?['isp']}</p><p class=\"editor-paragraph\">Usage Type: @{body('Parse_JSON')?['data']?['usageType']}</p><br>"
+                            },
+                            "path": "/Incidents/Comment"
+                        }
+                    },
+                    "Send_Telegram_alert": {
+                        "runAfter": {
+                            "Add_comment_to_incident_(V3)": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": {
+                                "chat_id": "<TELEGRAM_CHAT_ID>",
+                                "text": "SENTINEL ALERT\nIncident: @{triggerBody()?['object']?['properties']?['title']}\nSeverity: @{triggerBody()?['object']?['properties']?['severity']}\nAttacker IP: @{body('Parse_JSON')?['data']?['ipAddress']}\nAbuseIPDB score: @{body('Parse_JSON')?['data']?['abuseConfidenceScore']}/100\nReports (90d):@{body('Parse_JSON')?['data']?['totalReports']}\nOpen:@{triggerBody()?['object']?['properties']?['incidentUrl']}"
+                            }
+                        },
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            },
+                            "secureData": {
+                                "properties": [
+                                    "inputs"
+                                ]
+                            }
+                        }
+                    },
+                    "Send_Slack_alert": {
+                        "runAfter": {
+                            "Send_Telegram_alert": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "<SLACK_WEBHOOK_URL>",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": {
+                                "text": "*SENTINEL ALERT*\nIncident: @{triggerBody()?['object']?['properties']?['title']}\nSeverity: @{triggerBody()?['object']?['properties']?['severity']}\nAttacker IP: @{body('Parse_JSON')?['data']?['ipAddress']}\nAbuseIPDB score: @{body('Parse_JSON')?['data']?['abuseConfidenceScore']}/100\nReports (90d): @{body('Parse_JSON')?['data']?['totalReports']}\n<@{triggerBody()?['object']?['properties']?['incidentUrl']}|Open incident>"
+                            }
+                        },
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            },
+                            "secureData": {
+                                "properties": [
+                                    "inputs"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "runAfter": {
+                    "Entities_-_Get_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "azuresentinel": {
+                    "id": "/subscriptions/<SUBSCRIPTION_ID>/providers/Microsoft.Web/locations/austriaeast/managedApis/azuresentinel",
+                    "connectionId": "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rg-honeypot-soc1/providers/Microsoft.Web/connections/azuresentinel-pb-abuseipdb-enrich",
+                    "connectionName": "azuresentinel-pb-abuseipdb-enrich",
+                    "connectionProperties": {
+                        "authentication": {
+                            "type": "ManagedServiceIdentity"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,157 +1,25 @@
-# End-to-End Threat Intel Project
+# Stage 2: Detection Engineering with Wazuh
 
-I set up a honeypot on a cloud VM, let the internet attack it, and built a pipeline that turns the raw logs into a live Kibana dashboard. I'm building this in stages and adding each one to this same repo, so the history of how it grew stays in one place.
+**Part 2 of 3 of the T-Pot/Vultr Honeypot Threat Intel Project.** [Project overview](../README.md) · [Stage 1](../stage1-honeypot-elk/README.md) · [Stage 3](../stage3-sentinel/README.md)
 
-Stage 1 is finished and documented below.
+Stage 1 collected live attack traffic into a self-managed ELK stack, roughly 18.8 million events over the first two weeks. Stage 2 adds the detection layer: a dedicated Wazuh SIEM, two monitored decoys, and 51 custom rules I wrote by hand from real attacker log lines.
 
-## Roadmap
+## Contents
 
-| Stage | What it adds | Status |
-|-------|--------------|--------|
-| 1 | Honeypot VM, Elastic Stack data server, Kibana dashboard | Done |
-| 2 | A detection layer built on top of the same logs ([#stage-2-detection-engineering-with-wazuh](#stage-2-detection-engineering-with-wazuh)) | Done |
-| 3 | Automated alerting and response | Coming soon |
-
----
-
-## Stage 1: Honeypot + Elastic Stack
-
-### The setup
-
-Two Vultr VMs sit in the same private network.
-
-- **Honeypot VM** runs [T-Pot](https://github.com/telekom-security/tpotce), which is a Docker Compose stack of honeypots and network sensors. Almost the whole port range is open to the internet on purpose. Only management SSH and the T-Pot web UI are restricted to my own IP.
-- **Data server VM** runs Logstash, Elasticsearch and Kibana. It has no public exposure at all.
-
-![project-flow](docs/images/project-flow.png)
-
-### How an event travels
-
-Every honeypot container writes its own JSON log. Filebeat on the honeypot VM tails those files and ships each new line across the private network to Logstash. Filebeat does no parsing. I wanted the box that gets attacked to run as little logic as possible.
-
-Logstash does the real work. A JSON filter breaks the raw line into fields, a GeoIP filter adds country, city and coordinates for the attacker's IP, and a date filter normalizes the timestamp. The result goes into Elasticsearch as a daily index named `honeypot-YYYY.MM.DD`.
-
-Kibana is only reachable through an SSH tunnel via the honeypot VM, so nothing about the data server is visible from outside.
-
-### The dashboard
-
-![dashboard overview](docs/images/new-dashboard.png)
-
-| Panel | What it shows |
-|-------|---------------|
-| Honeypot Activity Breakdown | Share of all logged events per sensor, including the passive tools (p0f, Suricata) |
-| Interactive Honeypot Breakdown | Same idea with the passive tools filtered out, so only real attacker interaction is left |
-| Attacker Origins Map | Where attacking IPs are located, plotted from the GeoIP coordinates |
-| Attack Volume Over Time | Events per time bucket, which makes bursts and quiet stretches easy to spot |
-| Top Attacking IP Addresses | The most persistent source IPs, ranked by event count |
-| Most Attempted Credentials | A tag cloud of the usernames and passwords bots try most often |
-
-The dashboard also has controls for the time range and for filtering to a single honeypot, so one sensor's activity can be isolated across every panel at once.
-
-A closer look at the main panels:
-
-**Where the attacks come from**
-
-![Attacker origins map](docs/images/attacks-world-map.png)
-
-**Which sensors see the traffic**
-
-![Honeypot breakdown, all sensors next to interactive only](docs/images/honeypot-activity-breakdown.png)
-
-**When it happens**
-
-![Attack volume over time](docs/images/Attacks-overtime.png)
-
-**Who keeps coming back**
-
-![Top attacking IP addresses](docs/images/most-persistent-attackers.png)
-
-### What the data showed
-
-Snapshot from [date range]:
-
-- Across all sensors, p0f accounted for about 67% of events and Suricata about 23%. That's expected. Both watch every packet that touches the box, while the interactive honeypots only log when something connects to their fake service.
-- Once those two were filtered out, Honeytrap led with about 44%, Heralding had about 32%, and Cowrie had about 18%. My guess is that Honeytrap leads because it listens on ports that no other sensor claims, and Heralding's share reflects how many bots probe FTP, POP3 and similar protocols for weak logins. I haven't verified either explanation, so treat them as readings of the data rather than conclusions.
-
-![Credentials tag cloud](docs/images/Most-attempted-usernames-and-password.png)
-
-### Problems I ran into
-
-**Events silently disappearing for two days.** Elasticsearch was rejecting events because the timestamps didn't match the format Logstash handed over, and nothing in the pipeline complained. Every stage looked healthy while nothing reached storage. I fixed it by making the date filter match the format each container actually emits. The lesson I took from it: check the data at the end of the pipeline, not just whether each service is running.
-
-**Field names that weren't what I assumed.** I first wrote my filters expecting nested fields like `session.id`. The containers emit flat names like `session_id`. A Logstash filter pointed at a field that doesn't exist just skips it without an error, so the only symptom was missing enrichment. I had to compare my config against real raw events, container by container.
-
-**A map with no dots.** Kibana Maps refused to plot the GeoIP data. The mapping check showed why: Elasticsearch had typed `lat` and `lon` as two separate `float` fields instead of one `geo_point`. The relevant part of my Logstash config is:
-
-```
-if [attacker][ip] {
-  geoip {
-    source => "[attacker][ip]"
-    target => "[attacker][geoip]"
-  }
-}
-```
-
-The geoip filter already outputs the right shape. Elasticsearch just wasn't told to treat it as a point, so it guessed. A field's type can't be changed once an index exists, so the fix was an index template that applies to every new `honeypot-*` index:
-
-```json
-{
-  "index_patterns": ["honeypot-*"],
-  "priority": 200,
-  "template": {
-    "mappings": {
-      "properties": {
-        "attacker": { "properties": { "geoip": { "properties": { "geo": { "properties": {
-          "location": { "type": "geo_point" }
-        } } } } } }
-      }
-    }
-  }
-}
-```
-
-I created the next day's index early so I could confirm the mapping showed `geo_point` before any data landed in it. Older indices keep the old mapping, so historical data would need a reindex to show up on the map.
-
-### A note on keeping the lab contained
-
-The honeypot is expected to get compromised eventually, so the design assumes it will. The analysis box only accepts traffic from the private network, Filebeat is the single link between the two, and Kibana is never exposed. Real IPs, ports and credentials are deliberately left out of this repo.
-
-### What I learned
-
-Most of what I took away from this stage came from things breaking, not from things working.
-
-- A pipeline can look healthy and deliver nothing. During the timestamp problem every service was running, and the only way I caught it was looking at what had actually landed in Elasticsearch.
-- Check a real raw event before writing a filter. Guessing field names cost me a full rework.
-- Logstash and Elasticsearch both fail quietly. A filter skips an event when its field is missing, and an event with an unparseable timestamp just gets dropped. Neither one raises its hand.
-- Field types get decided when an index is created. Declaring them in a template up front is much cheaper than fixing them afterwards, and a fix only helps new data.
-
-Reading the numbers matters as much as collecting them. p0f making up two thirds of all events looked odd until I remembered it logs every packet that touches the box. The more useful picture only showed up once I filtered it out and looked at the sensors that attackers actually interact with.
-
-I also ran into least privilege in a small way. Kibana refuses to connect as the `elastic` superuser and wants a scoped service account token instead, which made me think harder about which component actually needs which level of access.
-
-On the design side, keeping the exposed machine as simple as possible paid off. Filebeat only ships logs and everything that thinks happens on the private box, so when something broke there was far less to untangle.
-
----
+1. [Architecture](#architecture)
+2. [Wazuh setup: manager and T-Pot agent](#wazuh-setup-manager-and-t-pot-agent)
+3. [Rule inventory](#rule-inventory)
+4. [Problems I ran into](#problems-i-ran-into)
+5. [Repository layout and deployment](#repository-layout-and-deployment)
 
 
-## Stage 2: Detection Engineering with Wazuh
-
-**Part 2 of 3 of the T-Pot/Vultr Honeypot Threat Intel Project.**
-This is the second part of my honeypot project. In Stage 1 I put a T-Pot honeypot on the internet and shipped everything it caught into my own ELK stack. About 18.8 million events landed in the first two weeks.
-
-Kibana is great for looking at that data. It doesn't alert on anything, though, and it has no idea what an attack actually looks like. So for Stage 2 I stood up a Wazuh SIEM, pointed the honeypot at it, added a real Windows server as bait, and wrote the detection rules myself.
-
-Where it ended up:
-
-51 custom rules: 41 for the T-Pot honeypots, 10 for the Windows box
-Rules for Cowrie, Heralding, RDPHoneyPot, ConPot (three fake ICS devices), Dionaea, and Windows event logs plus Sysmon
-Every alerting rule mapped to MITRE ATT&CK, including the ICS matrix for ConPot
-Every rule seen firing, either on real attack traffic or on a test I ran myself
+![Custom rule alerts over 30 minutes](docs/images/cowrie-dionaea-rdpy.png)
+*Half an hour of my rules firing on real traffic: 5,652 alerts across Cowrie, Dionaea and the RDP honeypot.*
 
 
 ## Architecture
 
-![Architecture](stage2-wazuh-detection/Images/stage2-diagram.png)
+![Architecture](docs/images/stage2-diagram.png)
 
 **Why the two agents reach the manager differently**
 
@@ -186,42 +54,30 @@ The Windows host is the odd one out. It started inside the VPC, but I pulled it 
 - Audit policy for process creation with full command lines (4688), logons, service installs, and Defender and firewall changes. Sysmon on top, with the SwiftOnSecurity config.
 - Wazuh agent 4.14.8, matching the manager.
 - Windows Firewall and the Vultr group both allow 3389. Verified with `nmap -Pn` (host drops ICMP) going from `filtered` to `open`.
-  
-![Both agents active](stage2-wazuh-detection/Images/wazuh-agent-cheklist.png)
+
+![Both agents active](docs/images/wazuh-agent-cheklist.png)
 *Both agents reporting in, each on Wazuh 4.14.8 to match the manager.*
 
 **How I validated rules**
-
-To test a rule, I'd paste a real log line into wazuh-logtest on the manager.
 1. `wazuh-logtest` on the manager with a real captured log line.
    - Phase 2 shows what the decoder extracted.
    - Phase 3 shows which rule won.
 2. Live traffic: either a controlled action (SSH into Cowrie, connect to a port) or waiting for organic attacks.
 3. Alerts checked in `/var/ossec/logs/alerts/alerts.json` and on the dashboard.
 
-
 `wazuh-logtest` treats every line as a fresh event, so a "5 failures in 2 minutes" rule can only be proven against the live pipeline.
 
-![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-cowrie-rules.png)
-*A real failed login run through `wazuh-logtest`. 
-Phase 2 is what the decoder extracted, 
-Phase 3 is my rule 100010 matching with its ATT&CK tags.*
+![wazuh-logtest on a real Cowrie line](docs/images/logtest-cowrie-rules.png)
+*A real failed login run through `wazuh-logtest`. Phase 2 is what the decoder extracted, Phase 3 is my rule 100010 matching with its ATT&CK tags.*
 
-![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-heralding-rules.png)
-*A real Heralding log through 'wazuh-logtest'.*
+![wazuh-logtest on a real Cowrie line](docs/images/logtest-heralding-rules.png)
 
-![wazuh-logtest on a real Cowrie line](stage2-wazuh-detection/Images/logtest-windows-rules.png)
-*A real Windows log through 'wazuh-logtest'.*
+![wazuh-logtest on a real Cowrie line](docs/images/logtest-windows-rules.png)
 
 
 ## Rule inventory
 
 Full XML with per-rule notes is in [`rules/`](rules). Levels are Wazuh severity (0-15).
-On a honeypot, everything that shows up is hostile, so "is this bad?" isn't a useful question. I set levels by how far the attacker got instead. Connections and scans sit low (0-5). Credential attempts and real protocol commands land in the middle (6-10). Brute force patterns, successful logins, payload downloads and anything touching admin rights or Defender go high (10-14).
-A couple of patterns show up across the files. One rule records every event of a type, and a second one escalates when something specific shows up (all commands vs. dangerous commands). A single-event rule usually has a correlation rule sitting on top of it to catch the burst (one failed login vs. five in two minutes).
-
-![mitre_attack](stage2-wazuh-detection/Images/mitre&attack_dashboard.png)
-
 
 ### Cowrie, SSH/Telnet (`01_cowrie_rules.xml`, 10 rules)
 
@@ -237,6 +93,8 @@ A couple of patterns show up across the files. One rule records every event of a
 | 100017 | 3 | Unrecognised command (often honeypot fingerprinting) | T1059, T1059.004 |
 | 100018 | 3 | New connection | T1046 |
 | 100019 | 0 | Protocol telemetry (version banner, kex, params). Tagged, never alerts | deliberately unmapped |
+
+cowrie picture
 
 ### Heralding, multi-protocol credential capture (`02_heralding_rules.xml`, 9 rules)
 
@@ -254,6 +112,8 @@ A couple of patterns show up across the files. One rule records every event of a
 
 Per-service levels follow a priority call: VNC first (live desktop control), then mail relay abuse, then mailbox and database access.
 
+heralding picture
+
 ### RDPHoneyPot, emulated RDP (`03_rdp_honeypot_rules.xml`, 3 rules)
 
 | ID | Level | Detects | ATT&CK |
@@ -262,6 +122,7 @@ Per-service levels follow a priority call: VNC first (live desktop control), the
 | 100031 | 5 | Connection opened | T1046 |
 | 100032 | 4 | Connection closed | T1046 |
 
+rdphoneypot picture
 
 ### ConPot, ICS/SCADA (`04_conpot_rules.xml`, 11 rules)
 
@@ -279,10 +140,7 @@ Per-service levels follow a priority call: VNC first (live desktop control), the
 | 100064 | 3 | Kamstrup meter protocol | Connection lost | T0846 |
 | 100065 | 8 | Kamstrup meter protocol | Data/command sent | T0888 |
 
-![conpot_fuel_command](stage2-wazuh-detection/Images/conpot-fuel-command.png)
-
-*A real I20100 command sent to the fake fuel tank gauge, and the fake tank inventory it sent back, matched by 100042.*
-
+conpot picture
 
 ### Dionaea, malware capture (`05_dionaea_rules.xml`, 8 rules)
 
@@ -297,6 +155,7 @@ Per-service levels follow a priority call: VNC first (live desktop control), the
 | 100075 | 10 | FTP command activity | T1595 |
 | 100076 | 12 | Non-FTP data on the FTP port (scanners, raw TLS, HTTP probes) | T1595.002 |
 
+Dionaea picture
 
 ### Windows bait host (`06_windows_bait_rules.xml`, 10 rules)
 
@@ -317,8 +176,7 @@ In PowerShell, `sc` is an alias for `Set-Content`, so the service test has to ca
 
 It didn't take long for the real thing to show up. Within a day of opening RDP, bots were hammering the `support` account:
 
-![windows honeypot alerts](stage2-wazuh-detection/Images/windows-honeypot-alerts.png) 
-*Over 130,000 alerts from the bait host in two days. Wazuh's built-in rules log each failed logon, and my 110001 and 110003 flag the ones aimed at the bait account.*
+windows bait picture
 
 ---
 
@@ -364,8 +222,6 @@ The parts of this stage I learned the most from. Each one is written as what I s
 - **What I saw:** Dionaea's `ftp.commands.command` and Heralding's `auth_attempts` are JSON arrays, but the decoder flattens them into one string like `['USER', 'PASS']`. That killed my first approach of checking each command against an allow-list.
 - **What failed:** an anchored allow-list can never match a multi-command session.
 - **Fix:**  The rule now looks for the normal FTP words anywhere in that string and now uses pcre2 word boundaries.
-![dionaea_ftpd](stage2-wazuh-detection/Images/dionaea-ftpd-command-execution.png)
-*A scanner sending an HTTP request to the FTP port. Note how ftp.commands.command arrives as one flattened string. Rule 100076 catches it.*
 
 **8. Rule dependencies can create blind spots.**
 - **What was wrong:** I'd made the FTP command rule depend on the credential rule. That meant any session that sent commands without logging in was invisible, including a real scanner probe I'd already captured.
@@ -418,22 +274,6 @@ stage2-wazuh-detection/
     └── CLEANUP_NOTES.md
 ```
 
-
-
-
-
-## Stage 3: Coming soon
-
-
-
-
-
-## Credits
-
-* T-Pot CE by Telekom Security.
-* Vultr VPS for hosting.
 ---
 
-## Author
-
-Mohammed Aadil Khan
+**Next:** [Stage 3: Microsoft Sentinel and automated response](../stage3-sentinel/README.md)
