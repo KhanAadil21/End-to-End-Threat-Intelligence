@@ -1,0 +1,281 @@
+<!--
+================================================================================
+  CONPOT ICS/SCADA HONEYPOT: CUSTOM DETECTION RULES
+  Rule ID ranges:  100040-100049  Guardian AST (fuel tank gauge)
+                   100050-100059  IEC 60870-5-104 (power grid telecontrol)
+                   100060-100069  Kamstrup 382 (smart electricity meter)
+  Decoder:         none. Every rule chains off built-in rule 86600.
+  Log sources:     /home/tpotadmin/tpotce/data/conpot/log/
+                     conpot_guardian_ast.json
+                     conpot_IEC104.json
+                     conpot_kamstrup_382.json
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Build notes
+  - ConPot runs three simulated devices at once, each with its own log, so
+    each gets its own block and ID range.
+  - The first version of 100040 decoded perfectly in wazuh-logtest but lost
+    every time to built-in rule 86600 (level 0). XML was valid, the ID was
+    unique, no load errors. Chaining onto it with <if_sid>86600</if_sid>
+    fixed it. 86600 acts as the root rule for this JSON path, the same way
+    the stock sshd rules hang off one classifier rule.
+  - Wazuh's JSON decoder turns a JSON null into the 4 character string
+    "null". A ".+" check on request therefore fired on plain connection
+    events. The command-tier rules use negate="yes" on ^null$ instead.
+  - ATT&CK tags come from the ICS matrix, not Enterprise. If ossec.log shows
+    "Mitre Technique ID not found" for these IDs after a restart, keep them in
+    the comments and drop the <mitre> tags.
+================================================================================
+-->
+
+<group name="conpot_guardian_ast,">
+
+  <!--
+    Rule ID:      100040
+    Purpose:      New connection to the Guardian AST tank gauge emulator.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header rewritten)
+    Log Source:   conpot_guardian_ast.json, event_type NEW_CONNECTION
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none, nothing legitimate talks to a fake tank gauge.
+  -->
+  <rule id="100040" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^guardian_ast$</field>
+    <field name="event_type">^NEW_CONNECTION$</field>
+    <description>Conpot Guardian AST: new connection from $(src_ip)</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,guardian_ast,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100041
+    Purpose:      Connection to the Guardian AST emulator closed. Pairs with 100040.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header rewritten)
+    Log Source:   conpot_guardian_ast.json, event_type CONNECTION_LOST
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100041" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^guardian_ast$</field>
+    <field name="event_type">^CONNECTION_LOST$</field>
+    <description>Conpot Guardian AST: connection from $(src_ip) lost</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,guardian_ast,connection_lost,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100042
+    Purpose:      A real Guardian AST command arrived (event_type starts with
+                  AST). The client is speaking the protocol, not just knocking.
+                  The command seen live was I20100, the in-tank inventory query,
+                  and the emulator answered with fake tank levels.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header and description rewritten)
+    Log Source:   conpot_guardian_ast.json, event_type AST*
+    MITRE ATT&CK: ICS T0801 Monitor Process State (Collection)
+    False Positive Matrix:
+      None. Unanchored ^AST on purpose so other command codes are caught too.
+      An inventory read is collection, not exfiltration, so the description
+      just reports the request and leaves the call to the analyst.
+  -->
+  <rule id="100042" level="7">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^guardian_ast$</field>
+    <field name="event_type">^AST</field>
+    <description>Conpot Guardian AST: protocol command from $(src_ip), request: $(request), response: $(response)</description>
+    <mitre>
+      <id>T0801</id>
+    </mitre>
+    <group>conpot,guardian_ast,protocol_interaction,</group>
+  </rule>
+
+</group>
+
+<group name="conpot_iec104,">
+
+  <!--
+    Rule ID:      100050
+    Purpose:      New connection to the IEC 104 emulator. Port 2404 is the
+                  standard IEC 104 port, so most of this is scanners looking for
+                  exposed grid equipment.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-04 (header rewritten)
+    Log Source:   conpot_IEC104.json, event_type NEW_CONNECTION
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100050" level="7">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^IEC104$</field>
+    <field name="event_type">^NEW_CONNECTION$</field>
+    <description>Conpot IEC104: connection attempt from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,iec104,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100051
+    Purpose:      Connection to the IEC 104 emulator closed. Pairs with 100050.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-04 (header rewritten)
+    Log Source:   conpot_IEC104.json, event_type CONNECTION_LOST
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100051" level="7">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^IEC104$</field>
+    <field name="event_type">^CONNECTION_LOST$</field>
+    <description>Conpot IEC104: connection from $(src_ip) on port $(dst_port) lost</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,iec104,connection_lost,</group>
+  </rule>
+
+</group>
+
+<group name="conpot_kamstrup,">
+
+  <!--
+    Rule ID:      100060
+    Purpose:      New connection to the Kamstrup MANAGEMENT interface.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-04 (header rewritten)
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_management_protocol
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100060" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_management_protocol$</field>
+    <field name="event_type">^NEW_CONNECTION$</field>
+    <description>Conpot Kamstrup management: connection attempt from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,kamstrup_management,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100061
+    Purpose:      Connection to the management interface closed. Pairs with 100060.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header rewritten)
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_management_protocol
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100061" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_management_protocol$</field>
+    <field name="event_type">^CONNECTION_LOST$</field>
+    <description>Conpot Kamstrup management: connection from $(src_ip) lost</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,kamstrup_management,connection_lost,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100062
+    Purpose:      Real data sent to the management interface. Live captures
+                  include an HTTP GET probe and a PING style command, so someone
+                  is talking to the device, not just scanning the port.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header rewritten)
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_management_protocol,
+                  request not null
+    MITRE ATT&CK: ICS T0888 Remote System Information Discovery.
+                  Switch to T0836 Modify Parameter if a captured request turns
+                  out to be a write or control command rather than a read.
+    False Positive Matrix:
+      A near-empty probe (just \r\n) still fires because it is not the literal
+      "null". I am fine with that, it is still a client sending data.
+  -->
+  <rule id="100062" level="8">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_management_protocol$</field>
+    <field name="request" type="pcre2" negate="yes">^null$</field>
+    <description>Conpot Kamstrup management: data sent from $(src_ip), possible recon or exploitation, request: $(request)</description>
+    <mitre>
+      <id>T0888</id>
+    </mitre>
+    <group>conpot,kamstrup_management,protocol_interaction,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100063
+    Purpose:      New connection to the Kamstrup METER interface, the plain
+                  meter reading protocol. Separate from the management side.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (header rewritten)
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_protocol
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100063" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_protocol$</field>
+    <field name="event_type">^NEW_CONNECTION$</field>
+    <description>Conpot Kamstrup meter: connection attempt from $(src_ip) on port $(dst_port)</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,kamstrup,connection_attempt,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100064
+    Purpose:      Connection to the meter interface closed. Pairs with 100063.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-04 (header rewritten)
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_protocol
+    MITRE ATT&CK: ICS T0846 Remote System Discovery
+    False Positive Matrix: none.
+  -->
+  <rule id="100064" level="3">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_protocol$</field>
+    <field name="event_type">^CONNECTION_LOST$</field>
+    <description>Conpot Kamstrup meter: connection from $(src_ip) lost</description>
+    <mitre>
+      <id>T0846</id>
+    </mitre>
+    <group>conpot,kamstrup,connection_lost,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100065
+    Purpose:      Real data sent to the METER interface. Same idea as 100062,
+                  so both Kamstrup interfaces now have a command tier.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-14
+    Log Source:   conpot_kamstrup_382.json, data_type kamstrup_protocol,
+                  request not null
+    MITRE ATT&CK: ICS T0888 Remote System Information Discovery.
+                  Same T0836 note as 100062.
+    False Positive Matrix: same as 100062.
+  -->
+  <rule id="100065" level="8">
+    <if_sid>86600</if_sid>
+    <field name="data_type">^kamstrup_protocol$</field>
+    <field name="request" type="pcre2" negate="yes">^null$</field>
+    <description>Conpot Kamstrup meter: data sent from $(src_ip), possible recon or exploitation, request: $(request)</description>
+    <mitre>
+      <id>T0888</id>
+    </mitre>
+    <group>conpot,kamstrup,protocol_interaction,</group>
+  </rule>
+
+</group>

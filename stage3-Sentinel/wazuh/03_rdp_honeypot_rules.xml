@@ -1,0 +1,91 @@
+<!--
+================================================================================
+  RDP HONEYPOT (T-Pot RDPHoneyPot container): CUSTOM DETECTION RULES
+  Rule ID range:   100030-100039
+  Decoder:         none, generic JSON decoder (decoded_as json)
+  Log source:      RDPHoneyPot JSON event log from the rdphoneypot container
+                   under /home/tpotadmin/tpotce/data/rdphoneypot/log/
+  Author:          Mohammed Aadil Khan
+  Project:         T-Pot/Vultr Honeypot Threat Intel Project, Stage 2
+
+  Notes
+  - My first inventory called this container RDPY. The one running on the box
+    is RDPHoneyPot, which writes JSON with three eventids. These rules were
+    built from real log lines, not the RDPY source.
+  - The emulator accepts every login, so there is no failed/success split
+    like Cowrie has. rdphoneypot.login means credentials were submitted.
+  - Real clients use NLA, so the password field is empty and the useful data
+    is the NTLM challenge/response. None of those long values go into alert
+    text.
+  - This is the emulated RDP service on T-Pot. The real Windows RDP bait host
+    has its own rules in 06_windows_bait_rules.xml.
+================================================================================
+-->
+
+<group name="rdp_honeypot,">
+
+  <!--
+    Rule ID:      100030
+    Purpose:      A client submitted credentials to the emulated RDP service.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-02 (dynamic description and MITRE)
+    Log Source:   rdphoneypot eventid rdphoneypot.login
+    MITRE ATT&CK: T1110 Brute Force, T1021.001 Remote Services: RDP
+    False Positive Matrix:
+      None. Kept at level 4 because every login is accepted and the bulk of
+      it is automated credential spraying. The real Windows host (110001,
+      110002) is where an RDP login carries weight.
+  -->
+  <rule id="100030" level="4">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^rdphoneypot\.login$</field>
+    <description>RDP honeypot: credentials submitted from $(src_ip) (user: $(username), auth: $(auth_method))</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021.001</id>
+    </mitre>
+    <group>rdp_honeypot,rdp_login,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100031
+    Purpose:      Baseline visibility. A client opened a connection before
+                  sending any credentials.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-04
+    Log Source:   rdphoneypot eventid rdphoneypot.session.connect
+    MITRE ATT&CK: T1046 Network Service Discovery (Discovery)
+    False Positive Matrix: none.
+  -->
+  <rule id="100031" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^rdphoneypot\.session\.connect$</field>
+    <description>RDP honeypot: connection opened from $(src_ip):$(src_port)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>rdp_honeypot,rdp_connection_established,</group>
+  </rule>
+
+  <!--
+    Rule ID:      100032
+    Purpose:      End of a session, so connect, login and close can be lined up
+                  by session ID.
+    Author:       Mohammed Aadil Khan
+    Date:         2026-10-01 (built), 2026-10-04 (dynamic description and MITRE)
+    Log Source:   rdphoneypot eventid rdphoneypot.session.closed
+    MITRE ATT&CK: T1046 Network Service Discovery. Shares the tag with 100031
+                  as the two ends of the same event.
+    False Positive Matrix: none.
+  -->
+  <rule id="100032" level="4">
+    <decoded_as>json</decoded_as>
+    <field name="eventid">^rdphoneypot\.session\.closed$</field>
+    <description>RDP honeypot: connection from $(src_ip) closed</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>rdp_honeypot,rdp_connection_closed,</group>
+  </rule>
+
+</group>
