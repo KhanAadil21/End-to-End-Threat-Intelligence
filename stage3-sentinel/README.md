@@ -233,14 +233,6 @@ The honeypot never had a quiet hour.
 
 I'm writing the best of these up properly as incident reports next.
 
-## Cost and decommissioning
-
-The lab ran for about three weeks and cost about **CA$80** by mid-November, all of it from the Azure Free Trial credit. After a surprise bill on Vultr at the end of Stage 2, I set a $150 budget with alerts on day one. The 25% alert did fire, which was oddly reassuring. Sentinel stayed inside its 31-day trial, and a 1 GB daily cap on the workspace meant a flood couldn't run up a bill.
-
-![Azure billing summary](docs/images/cost-management.png)
-
-When it was done I deleted the resource group, then the things that live outside it: the app registration, the AbuseIPDB key, the Telegram bot token and the Slack webhook. Old identities with live secrets are an easy thing to forget about.
-
 ## Repository contents
 
 ```
