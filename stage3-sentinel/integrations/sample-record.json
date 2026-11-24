@@ -1,0 +1,36 @@
+[
+  {
+    "TimeGenerated": "2026-10-24T18:49:47.935Z",
+    "AlertId": "1761331787.123",
+    "RuleId": "100012",
+    "RuleLevel": 12,
+    "RuleDescription": "Cowrie honeypot: successful login",
+    "RuleGroups": [
+      "cowrie",
+      "authentication_success"
+    ],
+    "MitreIds": [
+      "T1078",
+      "T1021.004"
+    ],
+    "MitreTactics": [
+      "Initial Access",
+      "Lateral Movement"
+    ],
+    "Honeypot": "cowrie",
+    "AgentId": "003",
+    "AgentName": "tpot-agent",
+    "SrcIp": "192.0.2.10",
+    "SrcPort": 48162,
+    "DstPort": 22,
+    "Protocol": "ssh",
+    "Username": "root",
+    "Password": "example",
+    "Command": "uname -a",
+    "Session": "8252668f024b",
+    "EventId": "cowrie.login.success",
+    "Url": "http://example.com/x",
+    "FileHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "Location": "/home/tpotadmin/tpotce/data/cowrie/log/cowrie.json"
+  }
+]
